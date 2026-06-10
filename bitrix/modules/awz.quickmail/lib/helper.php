@@ -5,6 +5,7 @@ use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Config\Option;
 use Bitrix\Main\Mail\Event;
 use Bitrix\Main\Mail\Internal\EventTable;
+use Awz\Quickmail\Logger as QuickmailLogger;
 
 
 class Helper {
@@ -14,12 +15,14 @@ class Helper {
     const MASK_DELETE = 4;
 
     public static function isActive(int $id): bool{
-        return self::getMask($id) & self::MASK_ACTIVE;
+        $isActive = self::getMask($id) & self::MASK_ACTIVE;
+        return $isActive;
     }
 
     public static function isDelete(int $id): bool
     {
-        return self::getMask($id) & self::MASK_DELETE;
+        $isDelete = self::getMask($id) & self::MASK_DELETE;
+        return $isDelete;
     }
 
     public static function getMask(int $id){
@@ -30,6 +33,10 @@ class Helper {
             try{
                 $opts = unserialize(Option::get(static::MODULE_ID, "OPTS", "",""), ['allowed_classes'=>false]);
             }catch (\Exception $e){
+                QuickmailLogger::error('Ошибка при получении настроек масок', [
+                    'method' => __METHOD__,
+                    'error' => $e->getMessage()
+                ]);
                 $opts = [];
             }
         }
@@ -45,31 +52,65 @@ class Helper {
      */
     public static function sendImmediate(int $eventId): bool
     {
+        QuickmailLogger::info('Начало немедленной отправки события', [
+            'method' => __METHOD__,
+            'event_id' => $eventId
+        ]);
+        
         try {
             // Получаем событие из базы
             $event = EventTable::getById($eventId)->fetch();
-            
-            if (!$event) {
+            $messageId = (int)$event['MESSAGE_ID'];
+            if(!$messageId) {
+                QuickmailLogger::warning('Событие не отправлено, нет MESSAGE_ID', [
+                    'method' => __METHOD__,
+                    'event_id' => $eventId,
+                    'messageId' => $messageId
+                ]);
                 return false;
             }
-
-            // Создаем объект события для отправки
-            $eventObj = Event::createInstance($event);
             
-            // Отправляем немедленно
-            $eventObj->sendImmediate();
+            if (!$event) {
+                QuickmailLogger::error('Событие не найдено в базе', [
+                    'method' => __METHOD__,
+                    'event_id' => $eventId
+                ]);
+                return false;
+            }
             
-            return true;
+            QuickmailLogger::debug('Событие найдено, отправляем', [
+                'method' => __METHOD__,
+                'event_id' => $eventId,
+                'event_name' => $event['EVENT_NAME'] ?? 'unknown'
+            ]);
+            
+            Handlers::$lockHandler[$messageId] = 1;
+            $flag = Event::sendImmediate($event);
+            Handlers::$lockHandler[$messageId] = 0;
+            
+            if($flag == 'Y') {
+                QuickmailLogger::info('Событие успешно отправлено немедленно', [
+                    'method' => __METHOD__,
+                    'event_id' => $eventId
+                ]);
+                return true;
+            } else {
+                QuickmailLogger::warning('Событие не отправлено', [
+                    'method' => __METHOD__,
+                    'event_id' => $eventId,
+                    'flag' => $flag
+                ]);
+            }
         } catch (\Exception $e) {
-            // Логируем ошибку
-            \CEventLog::Add(array(
-                'SEVERITY' => 'ERROR',
-                'AUDIT_TYPE_ID' => 'AWZ_QUICKMAIL_ERROR',
-                'MODULE_ID' => self::MODULE_ID,
-                'DESCRIPTION' => 'Ошибка при немедленной отправке события ID ' . $eventId . ': ' . $e->getMessage()
-            ));
-            return false;
+            QuickmailLogger::error('Ошибка при немедленной отправке события', [
+                'method' => __METHOD__,
+                'event_id' => $eventId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
         }
+        return false;
     }
 
     /**
@@ -82,15 +123,17 @@ class Helper {
     {
         try {
             EventTable::delete($eventId);
+            QuickmailLogger::info('Удаление события', [
+                'method' => __METHOD__,
+                'event_id' => $eventId
+            ]);
             return true;
         } catch (\Exception $e) {
-            // Логируем ошибку
-            \CEventLog::Add(array(
-                'SEVERITY' => 'ERROR',
-                'AUDIT_TYPE_ID' => 'AWZ_QUICKMAIL_ERROR',
-                'MODULE_ID' => self::MODULE_ID,
-                'DESCRIPTION' => 'Ошибка при удалении события ID ' . $eventId . ': ' . $e->getMessage()
-            ));
+            QuickmailLogger::error('Ошибка при удалении события', [
+                'method' => __METHOD__,
+                'event_id' => $eventId,
+                'error' => $e->getMessage()
+            ]);
             return false;
         }
     }

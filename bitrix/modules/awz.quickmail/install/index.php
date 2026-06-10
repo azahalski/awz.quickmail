@@ -128,8 +128,8 @@ class awz_quickmail extends CModule
             'main', 'OnBeforeEventSend',
             $this->MODULE_ID, '\\Awz\\Quickmail\\Handlers', 'OnBeforeEventSend'
         );
-        $eventManager->registerEventHandlerCompatible(
-            'main', 'OnAfterEventAdd',
+        $eventManager->registerEventHandler(
+            'main', '\Bitrix\Main\Mail\Internal\Event::OnAfterAdd',
             $this->MODULE_ID, '\\Awz\\Quickmail\\Handlers', 'OnAfterEventAdd'
         );
         $eventManager->registerEventHandlerCompatible(
@@ -163,7 +163,7 @@ class awz_quickmail extends CModule
             $this->MODULE_ID, '\\Awz\\Quickmail\\Handlers', 'OnBeforeEventSend'
         );
         $eventManager->unRegisterEventHandler(
-            'main', 'OnAfterEventAdd',
+            'main', '\Bitrix\Main\Mail\Internal\Event::OnAfterAdd',
             $this->MODULE_ID, '\\Awz\\Quickmail\\Handlers', 'OnAfterEventAdd'
         );
         $eventManager->unRegisterEventHandler(
